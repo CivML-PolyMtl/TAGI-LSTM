@@ -55,6 +55,34 @@ classdef task
             Mem = lstm.Mem;
         end
 
-        
+        function [yPd, SyPd, theta, Mem, xBu, SxBu, xBp, SxBp, zl, Szl, Czz] = runHydrid_AGVI(net, lstm, bdlm, x, y)
+            % exponential smoothing (ESM)
+            [net, states, maxIdx, netInfo] = network.initialization(net);
+            normStat = tagi.createInitNormStat(net);
+            theta         = lstm.theta;
+            if isfield(lstm, 'sv')
+                net.sv = lstm.sv;
+            end
+            if ~isfield(lstm, 'Sq')
+                Sq = [];
+            else
+                Sq = lstm.Sq;
+            end
+            if ~isfield(lstm, 'Mem')
+                Mem = [];
+            else
+                Mem = lstm.Mem;
+            end
+            if isempty(Mem)
+                [Mem] = rnn.initializeRnnMemory (net.layer, net.nodes, net.batchSize, 0);
+            end
+            if isempty(theta)
+                theta    = tagi.initializeWeightBias(net); % Initalize weights and bias at only 1st epoch
+            end
+            % Running
+            [yPd, SyPd, zl, Szl, xBp, SxBp, xBu, SxBu, lstm, Czz] = network.hydrid_AGVI(net, theta, normStat, states, maxIdx, Mem, x, y, Sq, bdlm);
+            theta = lstm.theta;
+            Mem = lstm.Mem;
+        end
     end
 end

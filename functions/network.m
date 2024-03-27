@@ -220,6 +220,262 @@ classdef network
                 rnnSmooth = [];
             end
         end
+        % Couple LSTM and SSM
+        function [yPd, SyPd, zl, Szl, xBp, SxBp, xBu, SxBu, lstm, Czz] = hydrid_AGVI(net, theta, normStat, states, maxIdx, Mem, x, y, Sq, bdlm)
+            % LSTM innitialization
+            sql       = net.sql;
+            batchSize = net.batchSize;
+            if isempty(Sq)
+                ySq   = y(1:sql,:);
+                SySq  = zeros(size(ySq),'like',x);
+                y(1:sql,:) = [];
+                if ~isempty(x)
+                    x(1:sql,:,:) = [];
+                end
+            else
+                ySq  = Sq{1};
+                SySq = Sq{2};
+            end
+            numObs   = size(y,1);
+            nblayer = length(net.layer);
+            Chh = cell(nblayer,numObs); % cov(h_t,h_{t-1}): covariance between hiddens states of t and t-1 for smoother
+            if ~isempty(x)
+                xsql     = net.xsql;
+                nbCov    = net.nbCov;
+                xSq  = x(1,:,:);
+                SxSq = zeros(size(xSq));
+                xSqloop  = [reshape(permute(xSq,[1,3,2]),[],batchSize);ySq];
+                xSqloop(isnan(xSqloop)) = 0;
+                SxSqloop  = [reshape(permute(SxSq,[1,3,2]),[],batchSize);SySq];
+            else
+                xSqloop  = ySq;
+                SxSqloop = SySq;
+            end
+            % BDLM innitialization
+            xBp  = zeros(size(bdlm.x,1),numObs);
+            SxBp = zeros(size(bdlm.x,1)^2,numObs);
+            xBu  = zeros(size(bdlm.x,1),numObs);
+            SxBu = zeros(size(bdlm.x,1)^2,numObs);
+            xBloop  = bdlm.x;
+            SxBloop = bdlm.Sx;
+            A   = bdlm.A;
+            F   = bdlm.F;
+            Q   = bdlm.Q;
+            R   = bdlm.R;
+            yPd   = zeros(numObs, 1, net.dtype);
+            SyPd  = zeros(numObs, 1, net.dtype);
+            Czz = zeros(numObs,1); % coefficient, to be used in A matrix, at pos. of lstm
+            mem0 = Mem;
+            if any(ismember(bdlm.comp,[113]))
+                idxV = 6;
+            end
+            %
+            numDataPerBatch = net.repBatchSize*net.batchSize;
+            zl      = zeros(numObs, net.batchSize, 'like',x);
+            Szl     = zeros(numObs, net.batchSize, 'like',x);
+
+            for i = 1:numDataPerBatch:numObs
+                idxBatch = i;
+                % Prepare output
+                ySqloop = y(idxBatch, :)';
+
+                % Training and testing
+                if strcmp(net.RNNtype, 'LSTM_lookback') w = 1; else w = sql; end
+                for k = 1:1:w
+                    % loading memory
+                    xloop   = xSqloop(:);
+                    Sxloop  = SxSqloop(:);
+                    yloop   = ySqloop(:);
+                    mem     = Mem(1:4,1);
+                    states  = tagi.lstmInitializeInputs(states, xloop, Sxloop, [], [], [], [], [], [], [], net.xsc, mem);
+                    % Training
+                    if net.trainMode == 1
+                        [states, normStat, maxIdx] = tagi.feedForwardPass(net, theta, normStat, states, maxIdx);
+                        if k == w
+                            [~, ~, ma, Sa]   = tagi.extractStates(states);
+                            xLp  = reshape(ma{end,1}, [net.ny, numDataPerBatch]);  % x_LSTM prior
+                            SxLp = reshape(Sa{end,1}, [net.ny, numDataPerBatch]);  % Sx_LSTM prior  
+                            % TAGI-LSTM: covariance between h_{t-1} and h_{t}
+                            [Chh(:,i)] = tagi.cov4smoother(net, theta, states);
+%                           % TAGI-LSTM: covariance between z^{O}_{t-1} and z^{O}_{t}
+                            if numel(xLp)>1
+                                Czz(i) = tagi.covZZlstm_2outputs(net, theta, ma, mem, Chh{end-1,i});
+                            else
+                                Czz(i) = tagi.covZZlstm(net, theta, ma, mem, Chh{end-1,i});
+                            end
+                            if any(~isnan(yloop))
+                                % Transition step
+                                if any(ismember(bdlm.comp,[113]))
+                                    mv2b   = xLp(2);
+                                    Sv2b   = SxLp(2);
+                                    [mv2bt, Sv2bt, cov_v2b_v2bt] = BDLM.expNormal(mv2b,Sv2b);
+                                    Q(idxV,idxV) = mv2bt;
+                                    [xBp(:,i) , SxBp(:,i)] = BDLM.KFPreHybrid_ESM_BNI(bdlm.comp, xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                                    [xBu(:,i), SxBu(:,i), yPd(i,:), SyPd(i,:), deltaMx_, deltaVx_]= BDLM.KFup_ESM_BNI (bdlm.comp, idxV, yloop, xBp(:,i), SxBp(:,i), F, R, mv2b, Sv2b, mv2bt, Sv2bt, cov_v2b_v2bt);
+                                    deltaMxL = deltaMx_([length(deltaMx_);idxV]);
+                                    deltaSxL = [deltaVx_(length(deltaMx_),length(deltaMx_));deltaVx_(idxV,idxV)];
+                                else
+                                    [xBp(:,i) , SxBp(:,i)] = BDLM.KFPreHybrid(xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                                    [xBu(:,i), SxBu(:,i), yPd(i,:), SyPd(i,:), deltaMx_, deltaVx_]= BDLM.KFup (yloop, xBp(:,i), SxBp(:,i), F, R);
+                                    deltaMxL = deltaMx_(end);
+                                    deltaSxL = deltaVx_(end);
+                                end
+                                % Backward-LSTM; update LSTM network
+                                [deltaM, deltaS, deltaMx, deltaSx, ~, ~, deltaHm, deltaHs] = tagi.hiddenStateBackwardPass(net, theta, normStat, states, deltaMxL, deltaSxL, [], maxIdx);
+                                dtheta = tagi.parameterBackwardPass(net, theta, normStat, states, deltaM, deltaS, deltaMx, deltaSx);
+                                theta  = tagi.globalParameterUpdate(theta, dtheta, net.gpu);
+                                Cch = states{16}{5}; 
+                                states = tagi.lstmPosterior(states, deltaM, deltaS, deltaHm, deltaHs, Cch);
+                            else
+                                % Transition step
+                                if any(ismember(bdlm.comp,[113]))
+                                    mv2b   = xLp(2);
+                                    Sv2b   = SxLp(2);
+                                    [mv2bt, Sv2bt, cov_v2b_v2bt] = BDLM.expNormal(mv2b,Sv2b);
+                                    Q(idxV,idxV) = mv2bt;
+                                    [xBp(:,i), SxBp(:,i), yPd(i,:), SyPd(i,:)] = BDLM.KFPreHybrid_ESM_BNI(bdlm.comp, xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                                else
+                                    [xBp(:,i), SxBp(:,i), yPd(i,:), SyPd(i,:)] = BDLM.KFPreHybrid(xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                                end
+                                xBu(:,i)  = xBp(:,i);
+                                SxBu(:,i) = SxBp(:,i);
+                            end
+                            xBloop  = xBu(:,i);
+                            SxBloop = SxBu(:,i);
+                            zl(i, :)  = xBloop(end);
+                            Szl(i, :) = SxBloop(end);
+                            ySq  = cat(1, ySq(2:end,:), zl(i, :));
+                            SySq = cat(1,SySq(2:end,:), Szl(i, :));
+                            if i<numObs
+                                if ~isempty(x)
+                                    xSq      = cat(1, xSq(2:end,:,:), x(i+1,:,:));
+                                    xSqloop  = [reshape(permute(xSq,[1,3,2]),[],batchSize);ySq];
+                                    SxSqloop = [reshape(permute(SxSq,[1,3,2]),[],batchSize);SySq];
+                                else
+                                    xSqloop  = ySq;
+                                    SxSqloop = SySq;
+                                end
+                            end
+                            xSqloop(isnan(xSqloop)) = 0;
+                        end
+
+                    % Validation
+                    elseif net.trainMode == 2 
+                        [states, normStat, maxIdx] = tagi.feedForwardPass(net, theta, normStat, states, maxIdx);
+                        if k == w
+                            [~, ~, ma, Sa]   = tagi.extractStates(states);
+                            xLp  = reshape(ma{end,1}, [net.ny, numDataPerBatch]);  % x_LSTM prior
+                            SxLp = reshape(Sa{end,1}, [net.ny, numDataPerBatch]);  % Sx_LSTM prior
+                            % TAGI-LSTM: covariance between h_{t-1} and h_{t}
+                            [Chh(:,i)] = tagi.cov4smoother(net, theta, states);
+                            % TAGI-LSTM: covariance between z^{O}_{t-1} and z^{O}_{t}
+                            if numel(xLp)>1
+                                Czz(i) = tagi.covZZlstm_2outputs(net, theta, ma, mem, Chh{end-1,i});
+                            else
+                                Czz(i) = tagi.covZZlstm(net, theta, ma, mem, Chh{end-1,i});
+                            end
+                            if any(~isnan(yloop))
+                                % Transition step
+                                if any(ismember(bdlm.comp,[113]))
+                                    mv2b   = xLp(2);
+                                    Sv2b   = SxLp(2);
+                                    [mv2bt, Sv2bt, cov_v2b_v2bt] = BDLM.expNormal(mv2b,Sv2b);
+                                    Q(idxV,idxV) = mv2bt;
+                                    [xBp(:,i) , SxBp(:,i),yPd(i,:), SyPd(i,:)] = BDLM.KFPreHybrid_ESM_BNI(bdlm.comp, xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                                    [xBu(:,i), SxBu(:,i)]= BDLM.KFup_ESM_BNI (bdlm.comp, idxV, yloop, xBp(:,i), SxBp(:,i), F, R, mv2b, Sv2b, mv2bt, Sv2bt, cov_v2b_v2bt);
+                                else
+                                    [xBp(:,i) , SxBp(:,i)] = BDLM.KFPreHybrid(xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                                    [xBu(:,i), SxBu(:,i), yPd(i,:), SyPd(i,:)]= BDLM.KFup (yloop, xBp(:,i), SxBp(:,i), F, R);
+                                end
+                            else
+                                % Transition step
+                                if any(ismember(bdlm.comp,[113]))
+                                    mv2b   = xLp(2);
+                                    Sv2b   = SxLp(2);
+                                    [mv2bt, Sv2bt, cov_v2b_v2bt] = BDLM.expNormal(mv2b,Sv2b);
+                                    Q(idxV,idxV) = mv2bt;
+                                    [xBp(:,i), SxBp(:,i), yPd(i,:), SyPd(i,:)] = BDLM.KFPreHybrid_ESM_BNI(bdlm.comp, xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                                else
+                                    [xBp(:,i), SxBp(:,i), yPd(i,:), SyPd(i,:)] = BDLM.KFPreHybrid(xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                                end
+                                xBu(:,i)  = xBp(:,i);
+                                SxBu(:,i) = SxBp(:,i);
+                            end
+                            xBloop  = xBu(:,i);
+                            SxBloop = SxBu(:,i);
+                            zl(i, :)  = xBloop(end);
+                            Szl(i, :) = SxBloop(end);
+                            ySq  = cat(1, ySq(2:end,:), zl(i, :));
+                            SySq = cat(1,SySq(2:end,:), Szl(i, :));
+                            if i<numObs
+                                if ~isempty(x)
+                                    xSq      = cat(1, xSq(2:end,:,:), x(i+1,:,:));
+                                    xSqloop  = [reshape(permute(xSq,[1,3,2]),[],batchSize);ySq];
+                                    SxSqloop = [reshape(permute(SxSq,[1,3,2]),[],batchSize);SySq];
+                                else
+                                    xSqloop  = ySq;
+                                    SxSqloop = SySq;
+                                end
+                            end
+                            xSqloop(isnan(xSqloop)) = 0;
+                        end
+
+                    % Testing
+                    elseif net.trainMode == 0
+                        if k == w
+                            [states, normStat, maxIdx] = tagi.feedForwardPass(net, theta, normStat, states, maxIdx);
+                            [~, ~, ma, Sa]   = tagi.extractStates(states);
+                            xLp  = reshape(ma{end,1}, [net.ny, numDataPerBatch])';  % x_LSTM prior
+                            SxLp = reshape(Sa{end,1}, [net.ny, numDataPerBatch])';  % Sx_LSTM prior
+                            % TAGI-LSTM: covariance between h_{t-1} and h_{t}
+                            [Chh(:,i)] = tagi.cov4smoother(net, theta, states);
+                            % TAGI-LSTM: covariance between z^{O}_{t-1} and z^{O}_{t}
+                            if numel(xLp)>1
+                                Czz(i) = tagi.covZZlstm_2outputs(net, theta, ma, mem, Chh{end-1,i});
+                            else
+                                Czz(i) = tagi.covZZlstm(net, theta, ma, mem, Chh{end-1,i});
+                            end
+                            % Transition step
+                            if any(ismember(bdlm.comp,[112 113]))
+                                mv2b   = xLp(2);
+                                Sv2b   = SxLp(2);
+                                [mv2bt, Sv2bt, cov_v2b_v2bt] = BDLM.expNormal(mv2b,Sv2b);
+                                Q(idxV,idxV) = mv2bt;
+                                [xBp(:,i), SxBp(:,i), yPd(i,:), SyPd(i,:)] = BDLM.KFPreHybrid_ESM_BNI(bdlm.comp, xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                            else
+                                [xBp(:,i), SxBp(:,i), yPd(i,:), SyPd(i,:)] = BDLM.KFPreHybrid(xBloop, SxBloop, A, F, Q, R, xLp, SxLp);
+                            end
+                            xBu(:,i)  = xBp(:,i);
+                            SxBu(:,i) = SxBp(:,i);
+                            xBloop  = xBu(:,i);
+                            SxBloop = SxBu(:,i);
+                            zl(i, :)  = xBloop(end);
+                            Szl(i, :) = SxBloop(end);
+                            ySq  = cat(1, ySq(2:end,:), zl(i, :));
+                            SySq = cat(1,SySq(2:end,:), Szl(i, :));
+                            if i<numObs
+                                if ~isempty(x)
+                                    xSq      = cat(1, xSq(2:end,:,:), x(i+1,:,:));
+                                    xSqloop  = [reshape(permute(xSq,[1,3,2]),[],batchSize);ySq];
+                                    SxSqloop = [reshape(permute(SxSq,[1,3,2]),[],batchSize);SySq];
+                                else
+                                    xSqloop  = ySq;
+                                    SxSqloop = SySq;
+                                end
+                            end
+                            xSqloop(isnan(xSqloop)) = 0;
+                            SxSqloop(isnan(SxSqloop)) = 0;
+                        end
+                    end
+                    % update lstm memory after each timestamp
+                    Mem = tagi.updateRnnMemory(net.RNNtype, states);
+                end
+
+            end
+            % update lstm memory after each epoch
+            lstm.theta = theta;
+            lstm.Mem   = Mem;
+        end
         % Initialization
         function [net, states, maxIdx, netInfo] = initialization(net)
             % Build indices

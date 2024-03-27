@@ -301,7 +301,11 @@ classdef tagi
             else
                 deltaMz = y;
                 deltaSz = Sy;
+                deltaHm{end} = deltaMz;
+                deltaHs{end} = deltaSz;
             end
+%             deltaHm{end} = deltaMz;
+%             deltaHs{end} = deltaSz;
             sv = net.sv;
             for k = (numLayers-1):-1:1
                 if kernelSize(k)==stride(k)||(kernelSize(k)==imgW(k)&&stride(k)==1); overlap = 0; else; overlap = 1; end
@@ -1064,7 +1068,25 @@ classdef tagi
             Ccc = prevSc.*mga(:,1);      % cov(c_t,c_{t-1})
             Cxh = Czz(1:end-no,:);       % cov(x_t,h_t)
         end 
-        
+        function [Chh, Ccc, Cxh] = lstmCov4smoother(Sz, mga, Jg, mca, prevmc, prevSc, prevSh, Jca, mw, ni, no)
+            Sz = [Sz;prevSh];
+            mw  = reshape(mw, [ni*no, 4]);
+
+            mwf = reshape(mw(:, 1), [ni, no]);
+            mwi = reshape(mw(:, 2), [ni, no]);
+            mwc = reshape(mw(:, 3), [ni, no]);
+            mwo = reshape(mw(:, 4), [ni, no]);
+
+            Czzf = Jg(:,1)'.*Sz.*mwf.*prevmc';
+            Czzi = Jg(:,2)'.*Sz.*mwi.*mga(:,3)';
+            Czzc = Jg(:,3)'.*Sz.*mwc.*mga(:,2)';
+            Czzo = Jg(:,4)'.*Sz.*mwo.*mca';
+            Czz  = Czzo + Jca'.*(Czzf + Czzi + Czzc).*mga(:,4)';
+
+            Chh     = Czz(end-no+1:end,:);   % cov(h_t,h_{t-1})
+            Ccc     = prevSc.*mga(:,1);      % cov(c_t,c_{t-1})
+            Cxh     = Czz(1:end-no,:);       % cov(x_t,h_t)
+        end
         % batch>1
         function [mz, Sz, mga, Sga, Jga, mc, Sc, Jca, Cch] = lstmMeanVar(mz, Sz, mw, Sw, mb, Sb, ma, Sa, prevmc, prevSc, ni, no, B, rB, actFunIdx, RNNbias, gpu)
             if RNNbias == 0
@@ -1397,7 +1419,21 @@ classdef tagi
             theta = tagi.compressParameters(mw, Sw, mb, Sb, mwx, Swx, mbx, Sbx);
         end
         
-
+        % AGVI
+        function [deltaMz, deltaSz] = noiseBackwardUpdate(maF, SaF, CzzF, maB, SaB, gpu)
+            if gpu == 1
+                funM    = @(x, y, z) x.*(y-z);
+                funS    = @(x, y, z) x.*(y-z).*x;
+                Jz      = CzzF./SaF;
+                deltaMz = arrayfun(funM, Jz, maB, maF);
+                deltaSz = arrayfun(funS, Jz, SaB, SaF);
+            else
+                Jz      = CzzF./SaF;
+                deltaMz = Jz.*(maB - maF);
+                deltaSz = Jz.*(SaB - SaF).*Jz;
+            end
+        end
+        
         % Initialization for weights and bias   
         function theta = initializeWeightBias(net)
 %             rng(1223)
@@ -1948,6 +1984,23 @@ classdef tagi
             Sb = Sb(idxb);
             cov_zz_output = sum(Sw.*diag(Chh),'all') + sum(Sw.*mh.*prevmh,'all') + sum(Chh.*(mw*mw'),'all') + Sb; % cov(z^{(O)}_t,z^{(O)}_{t-1}): cov of output of lstm between t and t-1
         end
+        function [cov_zz_output] = covZZlstm_2outputs(net, theta, ma, mem, Chh)
+            mh = ma{end-1};
+            prevmh = mem{1};
+            prevmh = prevmh{end-1};
+            numLayers  = length(net.nodes);
+            numParamsPerlayer_2 = net.numParamsPerlayer_2;
+            [mw, Sw, mb, Sb] = tagi.extractParameters(theta);
+            idxw = (numParamsPerlayer_2(1, numLayers-1)+1):numParamsPerlayer_2(1, numLayers);
+            idxb = (numParamsPerlayer_2(2, numLayers-1)+1):numParamsPerlayer_2(2, numLayers);
+            idxw = idxw(1:length(idxw)/2);
+            idxb = idxb(1:length(idxb)/2);
+            mw = mw(idxw);
+            Sw = Sw(idxw);
+            Sb = Sb(idxb);
+            cov_zz_output = sum(Sw.*diag(Chh),'all') + sum(Sw.*mh.*prevmh,'all') + sum(Chh.*(mw*mw'),'all') + Sb; % cov(z^{(O)}_t,z^{(O)}_{t-1}): cov of output of lstm between t and t-1
+        end
+
         function [xsm, Sxsm] = KFSmootherHidden_v1(xpre, Sxpre, xup, Sxup, cov)
             xsm  = zeros(size(xpre),'single');
             Sxsm = zeros(size(Sxpre),'single');
@@ -2022,5 +2075,32 @@ classdef tagi
             end
         end
 
+        function [Chh, Ccc, Cxh] = cov4smoother(net, theta, states)
+            numLayers  = length(net.nodes);
+            numParamsPerlayer_2 = net.numParamsPerlayer_2;
+            layer = net.layer;
+            nodes = cast(net.nodes, net.dtype);
+            [mw, Sw, mb, Sb] = tagi.extractParameters(theta);
+            [mz, Sz, ma, Sa, J, mdxs, Sdxs, ~, Sxs] = tagi.extractStates(states);
+            if strcmp(net.RNNtype,'LSTM_lookback') || strcmp(net.RNNtype,'LSTM_stateful') || strcmp(net.RNNtype,'LSTM_stateless')
+                [mga, Sga, Jga, mc, Sc, Jca, ~] = tagi.lstmExtractStates(states);
+            elseif strcmp(net.RNNtype,'GRU_lookback') || strcmp(net.RNNtype,'GRU_stateful') || strcmp(net.RNNtype,'GRU_stateless')
+                [mga, Sga, Jga, mem] = tagi.gruExtractStates(states);
+            end
+            Chh = cell(numLayers,1); % cov(h_t,h_{t-1}): covariance between hiddens states of t and t-1
+            Ccc = cell(numLayers,1); % cov(c_t,c_{t-1}): covariance between cell states of t and t-1
+            Cxh = cell(numLayers,1); % cov(h_t,x_t)
+            for k = (numLayers-1):-1:1
+                if  layer(k+1) == net.layerEncoder.lstm
+                    idxw = (numParamsPerlayer_2(1, k)+1):numParamsPerlayer_2(1, k+1);
+                    cSz = Sz{k};
+                    mem    = states{16}; % memory containing h and c of the previous timestamp t-1
+                    prevSh = mem{2};     % activation layer of the previous timestamp t-1: variance
+                    prevmc = mem{3};     % cell c of the previous timestamp t-1: mean
+                    prevSc = mem{4};     % cell c of the previous timestamp t-1: variance
+                    [Chh{k+1}, Ccc{k+1}, Cxh{k+1}] = tagi.lstmCov4smoother(cSz, mga{k+1}, Jga{k+1}, tanh(mc{k+1}), prevmc{k+1}, prevSc{k+1}, prevSh{k+1}, Jca{k+1}, mw(idxw), nodes(k)+nodes(k+1), nodes(k+1));
+                end
+            end
+        end
     end
 end

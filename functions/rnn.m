@@ -30,6 +30,15 @@ classdef rnn
             end
             nx = net.sql + net.xsql*net.nbCov;
             ny = 1;
+            % Observation noise
+            if ~isfield(net,'learnNoise')
+                net.learnSv        = 0;% Online noise learning
+                net.sv             = sv*ones(1,1);
+                net.noiseType      = [];
+            elseif net.learnNoise == 1 
+                ny = 2;
+                net.sv = [];
+            end
             % GPU 1: yes; 0: no
             net.task           = 'regression';
             net.modelName      = '';
@@ -58,10 +67,6 @@ classdef rnn
             net.actFunIdx      = [0, zeros(size(layer)),0];
             % LSTM activation functions for gates
             net.gateActFunIdx  = [2 2 1 2];
-            % Observations standard deviation
-            net.learnSv        = 0;% Online noise learning
-            net.sv             = sv*ones(1,1, net.dtype);
-            net.noiseType      = [];
             % Parameter initialization
             net.initParamType  = 'He'; %'He' 'Xavier'
             net.gainS          = 1*ones(1, length(net.layer)-1);

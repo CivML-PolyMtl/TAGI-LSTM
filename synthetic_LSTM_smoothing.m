@@ -53,8 +53,7 @@ net.LSTMsmoothing = 1;
 ytest, ytest_nomask, xtrain, xval, xtest, trainIdx, valIdx, ...
 trainValIdx, testIdx] = rnn.RnnDataProcess (x, y, nbobs, nbval, nbtest);
 
-% create nan at the beginning of time series; then infer them using LSTM
-% smoothing
+% create nan at the beginning of time series
 nb_past_infer = sql*2; % number of points before training to be inferred
 net.nb_past_infer = nb_past_infer;
 ytrain_raw = ytrain;
@@ -70,6 +69,7 @@ maxEpoch = 50;
 [svGrid] = rnn.svgrid (sv_up, sv_low, nbEpoch_decay, maxEpoch); % create decayed sv over "nbEpoch_decay" epoch
 batchSize = 1;
 nb_layer = 1;
+% 7: LSTM; just define the number of LSTM layers and #LSTM node
 net = rnn.defineNet(net,  sv_up,   batchSize,    maxEpoch,    7*ones(1,nb_layer),    40.*ones(1,nb_layer));
 netT = net;
 net.trainMode = 1;
