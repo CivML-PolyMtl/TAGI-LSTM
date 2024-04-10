@@ -97,7 +97,9 @@ classdef network
                             Szlpri(idxBatch, :) = reshape(Sa{end,1}, [net.ny, numDataPerBatch])';
                             if any(~isnan(yloop)) % when having observations
                                 [deltaM, deltaS, deltaMx, deltaSx, ~, ~, deltaHm, deltaHs, Chh(:,i), Ccc(:,i), Cxh(:,i)] = tagi.hiddenStateBackwardPass(net, theta, normStat, states, yloop, [], [], maxIdx);
-                                Czz(i) = tagi.covZZlstm(net, theta, ma, mem, Chh{end-1,i});
+                                if net.batchSize == 1
+                                    Czz(i) = tagi.covZZlstm(net, theta, ma, mem, Chh{end-1,i});
+                                end
                                 dtheta = tagi.parameterBackwardPass(net, theta, normStat, states, deltaM, deltaS, deltaMx, deltaSx);
                                 theta  = tagi.globalParameterUpdate(theta, dtheta, net.gpu);
                                 % Estimate posteriors:
@@ -112,7 +114,9 @@ classdef network
                             else  % when missing data
                                 % posteriors = priors
                                 [~, ~, ~, ~, ~, ~, ~, ~, Chh(:,i), Ccc(:,i), Cxh(:,i)] = tagi.hiddenStateBackwardPass(net, theta, normStat, states, yloop, [], [], maxIdx);
-                                Czz(i) = tagi.covZZlstm(net, theta, ma, mem, Chh{end-1,i});
+                                if net.batchSize == 1
+                                    Czz(i) = tagi.covZZlstm(net, theta, ma, mem, Chh{end-1,i});
+                                end
                                 cPos(:,i)  = cPrior(:,i); % cell states: posterior = prior
                                 ScPos(:,i) = ScPrior(:,i);
                                 hPos(:,i)  = hPrior(:,i); % hidden states: posterior = prior

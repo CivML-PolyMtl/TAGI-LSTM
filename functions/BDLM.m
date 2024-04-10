@@ -286,7 +286,9 @@ classdef BDLM
             Sxsm(:,end) = Sxup(:,end);
                 for i = size(xpre,2)-1:-1:1
                     cov_xt1_xt = reshape(Sxup(:,i),[],n)*A';
-                    cov_xt1_xt(end) = Czz(i);
+                    if ~isempty(Czz)
+                        cov_xt1_xt(end) = Czz(i);
+                    end
                     J = cov_xt1_xt/(reshape(Sxpre(:,i+1),[],n) + 1E-12*eye(size(cov_xt1_xt,1)));
                     xsm(:,i)  = xup(:,i) + J*(xsm(:,i+1)-xpre(:,i+1));
                     S = reshape(Sxup(:,i),[],n) + J*(reshape(Sxsm(:,i+1),[],n) - reshape(Sxpre(:,i+1),[],n))*J';
