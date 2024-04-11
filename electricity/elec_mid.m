@@ -11,7 +11,8 @@ clear all
 close all
  
 % initSeed = 291;
-initSeed = randi([1,1000],[5,1]);
+% initSeed = randi([1,1000],[5,1]);
+initSeed = [621 27 950 958 671];
  
 %% Data
 path  = char([cd ,'/electricity']);
@@ -22,7 +23,7 @@ nbTS  = numel(tsIdx);
 
 % plot(y)
 batchSize = 16;
-nb_tsPar = 42; 
+nb_tsPar = 24; 
 t1 = datenum('01-Jan-2012 00:00:00','dd-mmm-yyyy HH:MM:SS');
 tend = t1 + 1/24*(size(y,1)-1);
 t = [t1:1/24:tend]';
@@ -83,6 +84,17 @@ LL_val  = nan(nbTS,1);
 epoch_optim = zeros(nbTS,1);
 ytestPd  = cell(nbTS,1);   
 SytestPd = cell(nbTS,1);  
+
+% Initialize memory for LSTM: cell and hidden states
+m_Mem = 0;    % initialized values for mh and mc (cell and hidden states)
+S_Mem = 0;    % initialized values for Sh and Sc (cell and hidden states)
+% Initialize LSTM's memory at t=0, epoch=1
+% Mem{1} = mh (means for hidden states)
+% Mem{2} = Sh (variances for hidden states)
+% Mem{3} = mc (means for cell states)
+% Mem{4} = Sc (variances for cell states)
+Mem0 = rnn.initializeRnnMemory_v1 (net.layer, net.nodes, net.batchSize, m_Mem, S_Mem);
+Mem0_valTest = rnn.initializeRnnMemory_v1 (net.layer, net.nodes, netT.batchSize, m_Mem, S_Mem);
  
 %% Run
 disp(['Seed  : #' num2str(i)])
@@ -127,8 +139,7 @@ for ts = 1:nb_tsPar:nbTS
             [xtrain_loop, ytrain_loop, nb_del] = tagi.prepDataBatch_RNN (xtrain, ytrain_ts(:,j), batchSize, sql);
             lstm = [];
             lstm.theta = theta_ts{j,epoch};
-            lstm.Mem = memVal{j};
-%             lstm.Mem = [];
+            lstm.Mem = Mem0;
             [ytrainPd, SytrainPd, theta{j}, memVal{j}] = task.runLSTM(net, lstm, xtrain_loop, ytrain_loop);
 
             %% Validation
@@ -138,7 +149,7 @@ for ts = 1:nb_tsPar:nbTS
                 lstmT.Mem = rnn.getMem (net.layer, memVal{j}, batchSize);
                 lstmT.Sq  = rnn.getSq (sql, ytrainPd, SytrainPd);
             elseif transfer_mem == 0 && transfer_sq == 0
-                lstmT.Mem = [];
+                lstmT.Mem = Mem0_valTest;
                 lstmT.Sq  = rnn.getSq (sql, ytrain_loop, zeros(size(ytrain_loop)));
             elseif transfer_mem == 1 && transfer_sq == 0
                 lstmT.Mem = rnn.getMem (net.layer, memTest_ts{j}, batchSize);
@@ -188,7 +199,7 @@ for ts = 1:nb_tsPar:nbTS
             lstmT.Mem = memTest_ts{j};
             lstmT.Sq  = rnn.getSq (sql, yvalPd_ts{j}, SyvalPd_ts{j});
         elseif transfer_mem == 0 && transfer_sq == 0
-            lstmT.Mem = [];
+            lstmT.Mem = Mem0_valTest;
             Sq_ = [ytrain_ts(:,j); yvalnomask_ts(:,j)];
             lstmT.Sq  = rnn.getSq (sql, Sq_, zeros(size(Sq_)));
         elseif transfer_mem == 1 && transfer_sq == 0
@@ -219,19 +230,19 @@ ttrain = t(trainValIdx)';
 tval   = t(valIdx)';
 ttest  = t(testIdx)';
  
-for j = 1:4
-figure
-pl.plPrediction (t([valIdx;testIdx]), y([valIdx;testIdx],j), ttest, ytestPd(:,j), SytestPd(:,j), []);
-xlim ([t(valIdx(1)) t(end)]);
-title(['TS #' num2str(tsIdx(j))])
-end   
+% for j = 1:4
+% figure
+% pl.plPrediction (t([valIdx;testIdx]), y([valIdx;testIdx],j), ttest, ytestPd(:,j), SytestPd(:,j), []);
+% xlim ([t(valIdx(1)) t(end)]);
+% title(['TS #' num2str(tsIdx(j))])
+% end   
  
 % disp(['Optimized ep: #' num2str(epoch_optim)]) 
 ND = mt.computeND(y(testIdx,:),ytestPd)
 LL = mt.loglik(y(testIdx,:), ytestPd(:,:), SytestPd(:,:))
 QL = mt.compute90QL (y(testIdx,:), ytestPd(:,:), SytestPd(:,:))
  
-save('elec_mid_ensemFix05','y','t','ytestPd','SytestPd','initSeed','epoch_optim','testIdx','tsIdx','net','netT','ytestPd_cell','SytestPd_cell')
+save('elec_mid_ensemFix05_verify','y','t','ytestPd','SytestPd','initSeed','epoch_optim','testIdx','tsIdx','net','netT','ytestPd_cell','SytestPd_cell')
  
  
  
