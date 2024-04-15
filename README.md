@@ -13,6 +13,6 @@ runs scripts in the "examples" folder
 - The "synthetic_coupling_normal.m" file is to decompose a time series with linear trend using the TAGI-LSTM/SSM hybrid model. 
 -  The "synthetic_coupling_exponential_smoothing.m" and "tourismM30_coupling_exponential_smoothing.m" files are to decompose time series with a complex non-linear trend using the TAGI-LSTM/SSM hybrid model. 
 
-
+The implementation in python of the TAGI-LSTM method can be found in the pyTAGI library at https://www.tagiml.com/#/
 
 
