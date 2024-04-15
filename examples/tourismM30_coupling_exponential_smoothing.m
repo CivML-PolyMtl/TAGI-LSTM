@@ -156,7 +156,6 @@ for epoch = 1:maxEpoch
     % Smoother
     [xBu_train, SxBu_train] = BDLM.KFSmoother_ESM_BNI(bdlm.comp, xBp_train, SxBp_train, xBu_train, SxBu_train, bdlm.A, Czz);
     init_x   = xBu_train(:,1);
-%     init_x(1) = nanmean(ytrain_loop(1:seasonality)); 
     init_Sx  = reshape(SxBu_train(:,1),size(init_x,1),[]);
     init_Sx  = diag(diag(init_Sx));
     bdlm     = BDLM.build(bdlm, sQ, sv_Stability, init_x, init_Sx); %  build BDLM to again for the training set of next epoch

@@ -77,9 +77,6 @@ classdef task
             else
                 Mem = lstm.Mem;
             end
-            if isempty(Mem)
-                [Mem] = rnn.initializeRnnMemory (net.layer, net.nodes, net.batchSize, 0);
-            end
             if isempty(theta)
                 theta    = tagi.initializeWeightBias(net); % Initalize weights and bias at only 1st epoch
             end

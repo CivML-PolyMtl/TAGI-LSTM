@@ -250,7 +250,7 @@ classdef rnn
             rnnMem_split = rnn.RnnSplitMemoryBatch1(layer, mem, batchSize);
             mem = rnnMem_split(:,end);
         end
-        function [yPd, SyPd, mem, yPd_pos, SyPd_pos] = lstmTest(net, lstm, x, y, y_nomask, RollWindow, transfer_sq)
+        function [yPd, SyPd, mem, yPd_pos, SyPd_pos] = lstmTest(net, lstm, x, y, y_nomask, RollWindow)
             yPd_pos  = lstm.Sq{1};
             SyPd_pos = lstm.Sq{2};
             if isnan(RollWindow)
@@ -262,24 +262,15 @@ classdef rnn
                 yPd_prior  = cell(nbWindow,1);
                 SyPd_prior = cell(nbWindow,1);
                 for i = 1:nbWindow 
-                    if transfer_sq == 1
-                        lstm.Sq = rnn.getSq (net.sql, yPd_pos, SyPd_pos - net.sv^2);
-                    elseif transfer_sq == 0
-                        lstm.Sq = rnn.getSq (net.sql, yPd_pos, zeros(size(yPd_pos)));
-                    end
+                    lstm.Sq = rnn.getSq (net.sql, yPd_pos, zeros(size(yPd_pos)));
                     xloop = x((i-1)*RollWindow+1:min(i*RollWindow,size(y,1)),:,:);
                     yloop = y((i-1)*RollWindow+1:min(i*RollWindow,size(y,1)),:);
                     [xloop, yloop] = tagi.prepDataBatch_RNN (xloop, yloop, 1, net.sql);
                     [yPd_prior{i}, SyPd_prior{i},~, ~] = task.runLSTM(net, lstm, xloop, yloop);
                     yloop = y_nomask((i-1)*RollWindow+1:min(i*RollWindow,size(y,1)),:);
                     [yPd_, SyPd_, ~, mem] = task.runLSTM(net, lstm, xloop, yloop);
-                    if transfer_sq == 1
-                        yPd_pos  = [yPd_pos ;yPd_];
-                        SyPd_pos = [SyPd_pos;SyPd_];
-                    elseif transfer_sq == 0
-                        yPd_pos  = [yPd_pos ;yloop];
-                        SyPd_pos = [SyPd_pos;zeros(size(yloop))];
-                    end
+                    yPd_pos  = [yPd_pos ;yloop];
+                    SyPd_pos = [SyPd_pos;zeros(size(yloop))];
                     lstm.Mem = mem;
                 end
                 yPd  = cell2mat(yPd_prior);

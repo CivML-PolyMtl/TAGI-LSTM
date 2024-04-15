@@ -17,15 +17,7 @@ classdef network
             % Sequence length
             if isempty(Sq)
                 ySq   = y(1:sql,:);
-%                 ySq   = zeros(sql,batchSize);
-%                 ySq   = rand(sql,1);
-%                 ySq   = ones(sql,batchSize);
-%                 SySq  = 1E0.*ones([sql batchSize],'like',x);
                 SySq  = 0.*ones(sql,batchSize,'like',x);
-                % for revision
-%                 y(1:sql,:) = [];
-%                 x(1:sql,:,:) = [];
-%                 ySq = randn(sql, batchSize,'single').*sqrt(SySq);
             else
                 ySq  = Sq{1};
                 SySq = Sq{2};

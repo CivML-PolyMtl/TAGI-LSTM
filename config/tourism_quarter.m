@@ -1,9 +1,9 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-% File:         tourism monthly
-% Description:  Hybrid method to extract trend
+% File:         tourism quarterly
+% Description:  tourism quarterly
 % Authors:      Van-Dai Vuong, Luong-Ha Nguyen & James-A. Goulet
 % Created:      Aug 16, 2022
-% Updated:      Aug 16, 2022
+% Updated:      Apr 15, 2024
 % Contact:      vuongdai@gmail.com, luongha.nguyen@gmail.com & james.goulet@polymtl.ca
 % Copyright (c) 2022 Van-Dai Vuong, Luong-Ha Nguyen & James-A. Goulet 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -18,29 +18,24 @@ path  = char([cd ,'/data']);
 data  = load(char([path, '/tourism_nanTop.mat']));
 y = data.quarter_values;
 x = data.quarter_timestamps;
-
 tsIdx = [1:size(y,2)];
 nbTS  = numel(tsIdx);
 
-nbtest   = 8;             % number of test point
-nbval    = 4;
+batchSize = 1;
 nb_tsPar = 42;
 
-ytestPd_cell  = cell(length(initSeed),1);
-SytestPd_cell = cell(length(initSeed),1);
-optim_epoch = zeros(nbTS,length(initSeed));
-
+% time covariates
 [x_norm, ~, ~, ~, ~, ~, ~, ~] = dp.normalize(x, [], x, []);
 
 % Option:
+nbtest   = 8;                % number of test point
+nbval    = 4;
 nbobs    = size(y,1);        % total number of observations
 sql = 4;
-net.sql  = sql;             % Lookback period
+net.sql  = sql;              % Lookback period
 net.xsql = 1;
-net.nbCov = 1;  % number of covariates
+net.nbCov = 1;               % number of covariates
 nbtrain  = nbobs-nbtest;     % number of training point
-
-batchSize = 1;
 seasonality = 4;
 
 %% Data split and normalization
@@ -57,17 +52,17 @@ set(0,'defaulttextfontsize',14)
 format shortE
 rng(initSeed(i))
 
-%% BDLM
+%% SSM
 maxEpoch = 50;
-comp = [113,7]; % 12: Local trend; 7:LSTM
+comp = [113,7]; % 113: Local level + trend + exponential smoothing; 7:LSTM
 sQ    = [0,0];
 sv_Stability = 1E-10;
 %% Network
 net.learnNoise = 1;
 net.noiseType = 'hete';
-net = rnn.defineNet(net,  0,   batchSize,    maxEpoch,    [7],    [50]);
-%net  sv      batchSize   MaxEpoch    layer   node
-net.lastLayerUpdate = 0; % update z^{o} by smoother equation (BDLM + LSTM)
+net = rnn.defineNet(net,  [],   batchSize,    maxEpoch,    [7],    [50]);      % 7 is TAGI-LSTM layer
+                    %net  sv    batchSize     MaxEpoch     layer    node
+net.lastLayerUpdate = 0; 
 netT = net;
 net.trainMode = 1;
 net.batchSize = batchSize;
@@ -76,13 +71,26 @@ netT.batchSize = 1;
 netV = netT;
 netV.trainMode = 2;
 [net, states, maxIdx, netInfo] = network.initialization(net);
+ytestPd  = cell(nbTS,1);  
+SytestPd = cell(nbTS,1); 
+ytestPd_cell  = cell(length(initSeed),1);
+SytestPd_cell = cell(length(initSeed),1);
+optim_epoch = zeros(nbTS,length(initSeed));
 
-    
+% Initialize memory for LSTM: cell and hidden states
+m_Mem = 0;    % initialized values for mh and mc (cell and hidden states)
+S_Mem = 0;    % initialized values for Sh and Sc (cell and hidden states)
+% Initialize LSTM's memory at t=0, epoch=1
+% Mem{1} = mh (means for hidden states)
+% Mem{2} = Sh (variances for hidden states)
+% Mem{3} = mc (means for cell states)
+% Mem{4} = Sc (variances for cell states)
+Mem0 = rnn.initializeRnnMemory_v1 (net.layer, net.nodes, net.batchSize, m_Mem, S_Mem);
+
 %% Run
 disp(['Seed  : #' num2str(i)])
 disp(['Training................'])
-ytestPd  = cell(nbTS,1);  
-SytestPd = cell(nbTS,1); 
+
 %% Train
 for ts = 1:nb_tsPar:nbTS
     idxTs = ts:1:min(ts+nb_tsPar-1,nbTS);
@@ -124,7 +132,7 @@ for ts = 1:nb_tsPar:nbTS
             lstm.theta = theta{j};
             lstm.Sq{1,1}  = 0*ones(sql,1);
             lstm.Sq{2,1}  = 0*ones(sql,1);
-            lstm.Mem = [];
+            lstm.Mem = Mem0;
             bdlm = [];
             bdlm.comp = comp;
             bdlm = BDLM.build(bdlm, sQ, sv_Stability, initx{j}, initSx{j});
@@ -151,6 +159,7 @@ for ts = 1:nb_tsPar:nbTS
             xBp  = [xBp_train xBp_val];
             SxBp = [SxBp_train SxBp_val];
             Czz = [Czz_train;Czz_val];
+
             [xBu, SxBu] = BDLM.KFSmoother_ESM_BNI(comp, xBp, SxBp, xBu, SxBu, bdlm.A, Czz);
             initx_ = xBu(:,1); initx_(1) = nanmean(ytrain_loop(1:seasonality)); initx_(3) = 0;
             initx{j}    = initx_;
@@ -187,7 +196,7 @@ for ts = 1:nb_tsPar:nbTS
             lstm.theta = theta{j};
             lstm.Sq{1,1}  = 0*ones(sql,1);
             lstm.Sq{2,1}  = 0*ones(sql,1);
-            lstm.Mem = [];
+            lstm.Mem = Mem0;
             bdlm = [];
             bdlm.comp = comp;
             bdlm = BDLM.build(bdlm, sQ, sv_Stability, initx{j}, initSx{j});
@@ -229,14 +238,15 @@ end
 
 nbmodel = length(initSeed);
 [ytestPd, SytestPd] = ensem.ensembleWeight_cell(ytestPd_cell, SytestPd_cell, 1/nbmodel*ones(1,nbmodel));
-ND = mt.computeND(y(end-nbtest+1:end,:),ytestPd)
-QL = mt.compute90QL (y(end-nbtest+1:end,:), ytestPd, SytestPd)
-% MAPE = mt.computeMAPE(y(end-nbtest+1:end,:), ytestPd)
 
-% save('tourism_quarter_ESM_parallel_retrain','ytestPd','SytestPd','ytestPd_cell','SytestPd_cell','initSeed')
+% Display results
+p50 = mt.computeND(y(end-nbtest+1:end,:),ytestPd)
+p90 = mt.compute90QL(y(end-nbtest+1:end,:), ytestPd, SytestPd)
+RMSE = mt.computeRMSE(y(end-nbtest+1:end,:), ytestPd)
 
+% save results
+% save('tourism_quarter','ytestPd','SytestPd','initSeed')
 
- 
  
  
  
