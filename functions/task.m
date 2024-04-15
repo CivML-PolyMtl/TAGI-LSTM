@@ -39,12 +39,16 @@ classdef task
             % Smoothing for LSTM
             % rnnSmooth: contains all quantities needed to do smoothing in
             % LSTM: i.e., prior, posterior, and covariances for h, c, z^{O}
-            if net.LSTMsmoothing == 1  % Do smoothing in LSTM
-                if net.trainMode == 1
-                    [Mem0_infer, zOsm, SzOsm, Sq_infer, rnnMemory] = tagi.rnnSmoother(net, rnnSmooth);   % smoother initial values of cell states c_0 and hidden states h0
-                end
-            else                        % Do not do smoothing
+            if ~isfield(net, 'LSTMsmoothing')
                 Mem0_infer = Mem;
+            else
+                if net.LSTMsmoothing == 1  % Do smoothing in LSTM
+                    if net.trainMode == 1
+                        [Mem0_infer, zOsm, SzOsm, Sq_infer, rnnMemory] = tagi.rnnSmoother(net, rnnSmooth);   % smoother initial values of cell states c_0 and hidden states h0
+                    end
+                else                      % Do not do smoothing
+                    Mem0_infer = Mem;
+                end
             end
 
             ml    = yPd;
@@ -72,9 +76,6 @@ classdef task
                 Mem = [];
             else
                 Mem = lstm.Mem;
-            end
-            if isempty(Mem)
-                [Mem] = rnn.initializeRnnMemory (net.layer, net.nodes, net.batchSize, 0);
             end
             if isempty(theta)
                 theta    = tagi.initializeWeightBias(net); % Initalize weights and bias at only 1st epoch
