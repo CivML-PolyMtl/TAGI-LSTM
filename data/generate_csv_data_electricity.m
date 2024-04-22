@@ -5,7 +5,6 @@ data  = load(char([path, '/electricity.mat']));
 tsIdx = [1:370];
 y     = data.elec(:,tsIdx);
 
-
 %% 1 week: electricity_2014_03_31
 % time covariates
 time_start = datenum('01-Jan-2012 00:00:00','dd-mmm-yyyy HH:MM:SS');
@@ -14,13 +13,16 @@ t = [time_start:1/24:time_end]';
 t = t(19513:19848);  
 y = y(19513:19848,:);
 
+train_end = 168;
 sql = 24;
-ytrain = y(1:168-sql,:);
-ttrain = t(1:168-sql,:);
-yval = y(168-sql+1:168,:);
-tval = t(168-sql+1:168,:);
-ytest = y(169:end,:);
-ttest = t(169:end,:);
+val_len = 24;
+
+ytrain = y(1:train_end-sql,:);
+ttrain = t(1:train_end-sql,:);
+yval = y(train_end-sql-val_len+1:train_end,:);
+tval = t(train_end-sql-val_len+1:train_end,:);
+ytest = y(train_end+1-sql:end,:);
+ttest = t(train_end+1-sql:end,:);
 
 ttrain = datetime(ttrain,'ConvertFrom','datenum');
 ttrain = datestr(ttrain, 'yyyy-mm-dd HH:MM:SS');
