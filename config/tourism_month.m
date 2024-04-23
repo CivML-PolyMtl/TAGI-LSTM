@@ -24,6 +24,10 @@ nbTS  = numel(tsIdx);
 batchSize = 1;
 nb_tsPar = 42;
 
+ytestPd_cell  = cell(length(initSeed),1);
+SytestPd_cell = cell(length(initSeed),1);
+optim_epoch = zeros(nbTS,length(initSeed));
+
 % time covariates
 [x_norm, ~, ~, ~, ~, ~, ~, ~] = dp.normalize(x, [], x, []);
 
@@ -73,9 +77,6 @@ netV.trainMode = 2;
 [net, states, maxIdx, netInfo] = network.initialization(net);
 ytestPd  = cell(nbTS,1);  
 SytestPd = cell(nbTS,1); 
-ytestPd_cell  = cell(length(initSeed),1);
-SytestPd_cell = cell(length(initSeed),1);
-optim_epoch = zeros(nbTS,length(initSeed));
 
 % Initialize memory for LSTM: cell and hidden states
 m_Mem = 0;    % initialized values for mh and mc (cell and hidden states)
