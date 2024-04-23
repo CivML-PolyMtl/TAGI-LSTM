@@ -5,15 +5,15 @@ clear all
 path  = char([cd]);
 
 seasonality = 24;
-%% Train/test split 2014_03_31
+%% Train/test split 2008_01_14
 % load data
-data   = load(char([path, '/data/electricity.mat']));
-y      = data.elec(19513:19848,:);
+data   = load(char([path, '/data/traffic.mat']));
+y     = data.traffic(137:472,:);
 ytrain = y(1:end-168,:);     % observation
 ytest  = y(end-168+1:end,:); % observation
 
 % load result
-tagi = load(char([path, '/result/electricity/electricity_2014_03_31.mat']));
+tagi = load(char([path, '/result/traffic/traffic_2008_01_14.mat']));
 ytestPd  = tagi.ytestPd;
 SytestPd = tagi.SytestPd;
 p50_tagi = mt.computeND(ytest,ytestPd);
@@ -21,38 +21,20 @@ p90_tagi = mt.compute90QL (ytest, ytestPd, SytestPd);
 RMSE_tagi = mt.computeRMSE(ytest,ytestPd);
 MASE_tagi = mt.computeMASE(ytest, ytestPd, ytrain,seasonality);
 
-disp('electricity train/test split 2014_03_31 ...........')
-disp('matlab...........')
+disp('traffic train/test split 2008_01_14 ...........')
+disp('matlab.............')
 disp(['ND/p50:    ' num2str(p50_tagi)])
 disp(['p90:    ' num2str(p90_tagi)])
 disp(['RMSE:    ' num2str(RMSE_tagi)])
 disp(['MASE:    ' num2str(MASE_tagi)])
 disp('............................................')
 
-
 % load result
-ytestPd = readtable(char([path, '/result/electricity/electricity_2014_03_31_ytestPd_pyTAGI_timeCov.csv']));
+ytestPd = readtable(char([path, '/result/traffic/traffic_2008_01_14_ytestPd_pyTAGI.csv']));
 ytestPd = table2array(ytestPd);
-SytestPd = readtable(char([path, '/result/electricity/electricity_2014_03_31_SytestPd_pyTAGI_timeCov.csv']));
+SytestPd = readtable(char([path, '/result/traffic/traffic_2008_01_14_SytestPd_pyTAGI.csv']));
 SytestPd = table2array(SytestPd);
 
-% ytestPd = readtable(char([path, '/result/electricity/electricity_2014_03_31_ytestPd_pyTAGI.csv']));
-% ytestPd = table2array(ytestPd);
-% SytestPd = readtable(char([path, '/result/electricity/electricity_2014_03_31_SytestPd_pyTAGI.csv']));
-% SytestPd = table2array(SytestPd);
-
-% ytestPd1 = readtable(char([path, '/result/electricity/electricity_2014_03_31_ytestPd_pyTAGI.csv']));
-% ytestPd1 = table2array(ytestPd1);
-% SytestPd1 = readtable(char([path, '/result/electricity/electricity_2014_03_31_SytestPd_pyTAGI.csv']));
-% SytestPd1 = table2array(SytestPd1);
-
-% ytestPd2 = readtable(char([path, '/result/electricity/electricity_2014_03_31_ytestPd_pyTAGI_1.csv']));
-% ytestPd2 = table2array(ytestPd2);
-% SytestPd2 = readtable(char([path, '/result/electricity/electricity_2014_03_31_SytestPd_pyTAGI_1.csv']));
-% SytestPd2 = table2array(SytestPd2);
-% 
-% ytestPd = (ytestPd1 + ytestPd2)/2;
-% SytestPd = (SytestPd1 + SytestPd2)/2;
 
 p50_tagi = mt.computeND(ytest,ytestPd);
 p90_tagi = mt.compute90QL (ytest, ytestPd, SytestPd);
