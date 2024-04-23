@@ -10,11 +10,11 @@
 clear all
 close all
 
-initSeed = randi([1,1000],[3,1]);
-% initSeed = 100;
+% initSeed = randi([1,1000],[3,1]);
+initSeed = [930 170 640];
 
 %% Data
-path  = char([cd ,'/data']);
+path  = char([cd ,'/M4']);
 data  = load(char([path, '/M4_hourly_timeCov.mat']));
 
 tsIdx = [1:size(data.values,2)];
@@ -24,10 +24,7 @@ x2 = data.day_of_week;
 nbTS  = numel(tsIdx);
 
 batchSize = 1;
-nb_tsPar = 4;
-
-ytestPd_cell  = cell(length(initSeed),1);
-SytestPd_cell = cell(length(initSeed),1);
+nb_tsPar = 48;
 
 % time covariates
 [x1_norm, ~, ~, ~, ~, ~, ~, ~] = dp.normalize(x1, [], x1, []);
@@ -51,6 +48,8 @@ seasonality = 24*7;
 [~, ~, ~, ~, ~,...
     ~, ~, xtrain2, xval2, xtest2, ~, ~, ...
     ~, ~, xTrainVal2] = rnn.RnnDataProcess (x2_norm, y, nbobs, nbval, nbtest);
+ytestPd_cell  = cell(length(initSeed),1);
+SytestPd_cell = cell(length(initSeed),1);
 
 for i = 1:length(initSeed)
 close all
@@ -109,8 +108,10 @@ for ts = 1:nb_tsPar:nbTS
         y_temp(isnan(y_temp)) = [];
 %         initx{j,1}  = [nanmean(y_temp(1:seasonality)); 1E-2; 0; 0.4; 0; 0; 0];
 %         initSx{j,1} = diag([1E-1; 1E-1; 0; 1E-2; 1E-10; 0; 0]);
-        initx{j,1}  = [nanmean(y_temp(1:seasonality)); 1E-3; 1E-10; 1E-10; -3; 1E-5; 1E-5; 1E-1];
-        initSx{j,1} = diag([1E-2; 1E-4; 1E-10; 1E-10; 1E-2; 1E-3; 1E-3; 1E-1]);
+        initx{j,1}  = [nanmean(y_temp(1:seasonality)); 1E-3; 0; -3; 0; 0; 0];
+        initSx{j,1} = diag([1E-2; 1E-4; 0; 1E-2; 0; 0; 0]);
+%         initx{j,1}  = [nanmean(y_temp(1:seasonality)); 1E-3; 1E-10; 1E-10; -3; 1E-5; 1E-5; 1E-1];
+%         initSx{j,1} = diag([1E-2; 1E-4; 1E-10; 1E-10; 1E-2; 1E-3; 1E-3; 1E-1]);
     end
     ytestPd_loop  = cell(nbTsLoop, maxEpoch);
     SytestPd_loop = cell(nbTsLoop, maxEpoch);
@@ -214,7 +215,7 @@ p50 = mt.computeND(y(end-nbtest+1:end,:),ytestPd)
 p90 = mt.compute90QL(y(end-nbtest+1:end,:), ytestPd, SytestPd)
 RMSE = mt.computeRMSE(y(end-nbtest+1:end,:), ytestPd)
 
-% save('M4_hourly','ytestPd','SytestPd','initSeed')
+% save('M4_hourly_verify','ytestPd','SytestPd','initSeed')
 
 
  
@@ -223,4 +224,5 @@ RMSE = mt.computeRMSE(y(end-nbtest+1:end,:), ytestPd)
  
  
  
+
 
