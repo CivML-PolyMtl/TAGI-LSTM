@@ -66,7 +66,7 @@ maxEpoch = 50;
 [svGrid] = rnn.svgrid (sv_up, sv_low, nbEpoch_decay, maxEpoch);
 net = rnn.defineNet(net,  sv_up,   batchSize,    maxEpoch,    [7 7 7],    [40 40 40]);    % 7 is TAGI-LSTM layer
                     %net  sv       batchSize     MaxEpoch     layer        node   
-net.gainS = [.5,1.2,1.2,1].*ones(1, length(net.layer)-1);   
+net.gainS = [.5,1.5,1.5,1].*ones(1, length(net.layer)-1);   
 netT = net;     
 net.trainMode = 1;
 net.batchSize = batchSize;
