@@ -49,17 +49,6 @@ nbval    = 24;
 net.LSTMsmoothing = 1;
 
 % export to csv:
-% ytrain_csv = y(1:nbtrain);
-% ttrain_csv = t(1:nbtrain);
-% ttrain_csv = datestr(ttrain_csv, 'yyyy-mm-dd HH:MM:SS');
-% writematrix(ytrain_csv, 'x_train_sin_smoother.csv');
-% writematrix(ttrain_csv, 'x_train_sin_smoother_datetime.csv');
-% 
-% ytest_csv = y(nbtrain+1-sql:nbtrain+nbval);
-% ttest_csv = t(nbtrain+1-sql:nbtrain+nbval);
-% ttest_csv = datestr(ttest_csv, 'yyyy-mm-dd HH:MM:SS');
-% writematrix(ytest_csv, 'x_test_sin_smoother.csv');
-% writematrix(ttest_csv, 'x_test_sin_smoother_datetime.csv');
 
 %% 3. Data split and normalizatio
 [mytrain, sytrain, ytrain, yval, yval_nomask,...
